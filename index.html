@@ -1,41 +1,52 @@
 <!doctype html>
-<html class="h-full scroll-smooth" lang="en" x-data="$store.phantomWallet()">
+<html class="h-full scroll-smooth" lang="en">
 <head>
     <meta charset="UTF-8"/>
     <link href="/vite.svg" rel="icon" type="image/svg+xml"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Vite + TS</title>
 </head>
-<body class="min-h-screen bg-neutral-900 text-neutral-100 relative pt-12">
+<body class="min-h-screen bg-neutral-900 text-neutral-100 relative pt-12" x-init="$store.phantomWallet.init()">
 
 <div aria-hidden="true"
      class="absolute opacity-50 top-0 -z-10 h-full w-full bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
 
 <div class="max-w-2xl bg-white border border-neutral-300 rounded-md text-neutral-800 p-6 mx-auto " id="app">
     <h1 class="text-2xl font-bold mb-4">Solana Wallet Connect</h1>
-    <template x-if="!walletConnected">
-        <button @click="connectWallet" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+    <template x-if="!$store.phantomWallet.walletConnected">
+        <button @click="$store.phantomWallet.connectWallet()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
             Connect Wallet
         </button>
     </template>
 
-    <template x-if="walletConnected">
+    <template x-if="$store.phantomWallet.walletConnected">
         <div>
-            <p><strong>Wallet:</strong> <span x-text="walletAddress"></span></p>
-            <p><strong>Balance:</strong> <span x-text="balance"></span> SOL</p>
+            <p><strong>Wallet:</strong> <span x-text="$store.phantomWallet.walletAddress"></span></p>
+            <p><strong>Balance:</strong> <span x-text="$store.phantomWallet.balance"></span> SOL</p>
 
-            <button @click="getBalance"
+            <button @click="$store.phantomWallet.getBalance()"
                     class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2">
                 Refresh Balance
             </button>
 
-            <button @click="sendSol" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+            <button @click="$store.phantomWallet.sendSol()" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mr-2">
                 Send SOL
+            </button>
+
+            <button @click="$store.phantomWallet.disconnectWallet()" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                Disconnect Wallet
             </button>
         </div>
     </template>
 
-    <div class="mt-4" style="white-space: pre-wrap;" x-text="output"></div>
+    <!-- Loader -->
+    <div x-show="$store.phantomWallet.isLoading" class="fixed inset-0 bg-neutral-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white text-neutral-800 p-4 rounded-md shadow-lg">
+            Loading...
+        </div>
+    </div>
+
+    <div class="mt-4" style="white-space: pre-wrap;" x-text="$store.phantomWallet.output"></div>
 </div>
 <script src="/src/main.ts" type="module"></script>
 </body>
