@@ -3,177 +3,157 @@ import {
     Connection,
     LAMPORTS_PER_SOL,
     PublicKey,
-    SystemProgram,
-    Transaction,
-} from '@solana/web3.js'
+    // SystemProgram, // Not using sendSol for now to keep it simple
+    // Transaction,
+} from '@solana/web3.js';
 
-declare global {
-    interface Window {
-        solana?: {
-            isPhantom?: boolean
-            connect(): Promise<{ publicKey: PublicKey }>
-            disconnect(): void
-            signAndSendTransaction(
-                transaction: any
-            ): Promise<{ signature: string }>
-            publicKey: PublicKey
-        }
-    }
+// Define the Phantom Provider interface
+interface PhantomProvider {
+    publicKey: PublicKey | null;
+    isConnected: boolean;
+    isPhantom: boolean;
+    connect: (options?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey: PublicKey }>;
+    disconnect: () => Promise<void>;
+    signAndSendTransaction: (transaction: any, options?: any) => Promise<{ signature: string }>;
+    // Add other methods if needed, e.g., signTransaction, signMessage
 }
 
-export const phantomWallet = () => {
+// Access the Phantom provider from window
+const getPhantomProvider = (): PhantomProvider | null => {
+    if ('solana' in window) {
+        const provider = (window as any).solana;
+        if (provider.isPhantom) {
+            return provider as PhantomProvider;
+        }
+    }
+    // For a better UX, you might want to redirect users to install Phantom here
+    // window.open('https://phantom.app/', '_blank');
+    return null;
+};
+
+
+export const createPhantomWalletStore = () => {
     return {
-        walletConnected: false,
-        walletAddress: '',
+        publicKey: null as string | null,
+        isConnected: false,
         balance: '0',
-        output: '',
         isLoading: false,
+        message: '',
+        messageType: 'info', // 'info', 'success', 'error'
 
-        async init() {
-            // Try to auto-connect if wallet was previously connected and approved.
-            // Phantom specific: `connect({ onlyIfTrusted: true })`
-            if (window.solana && window.solana.isPhantom) {
-                this.isLoading = true;
-                this.output = "Checking wallet status...";
-                try {
-                    // Attempt to connect silently
-                    const resp = await window.solana.connect({ onlyIfTrusted: true });
-                    // If connect doesn't throw, it means it's connected or reconnected.
-                    // Phantom might not return publicKey here, so we check window.solana.publicKey
-                    if (window.solana.publicKey) {
-                        this.walletAddress = window.solana.publicKey.toBase58();
-                        this.walletConnected = true;
-                        this.output = 'Wallet auto-reconnected. Fetching balance...';
-                        await this.getBalance(); // Also sets isLoading to false in its finally block
-                    } else {
-                        // This case should ideally not happen if onlyIfTrusted succeeds without error
-                        // and publicKey is not set, but as a fallback:
-                        this.output = 'Please connect your wallet.';
-                        this.isLoading = false;
-                    }
-                } catch (error) {
-                    // This error is expected if the wallet is not connected or not trusted
-                    console.info('Silent connection failed:', error);
-                    this.output = 'Please connect your wallet.';
-                    this.walletConnected = false;
-                    this.walletAddress = '';
-                    this.balance = '0';
-                    this.isLoading = false;
-                }
-            } else {
-                this.output = 'Phantom Wallet not available. Please install it.';
-                this.isLoading = false;
-            }
-        },
+        _provider: getPhantomProvider(),
 
-        async connectWallet() {
-            if (!window.solana || !window.solana.isPhantom) {
-                this.output =
-                    'No wallet found. Install Phantom or another Solana wallet.'
-                return
-            }
+        async _updateBalance() {
+            if (!this.publicKey || !this._provider) return;
             this.isLoading = true;
-            this.output = 'Connecting to wallet...';
+            this.message = 'Fetching balance...';
+            this.messageType = 'info';
             try {
-                const response = await window.solana.connect()
-                const publicKey = response.publicKey
-
-                this.walletAddress = publicKey.toBase58()
-                this.walletConnected = true
-                this.output = 'Wallet connected. Fetching balance...'
-                await this.getBalance() // getBalance will set isLoading to false
-            } catch (err) {
-                console.error('Connection failed:', err)
-                this.output = 'Failed to connect wallet.'
-                this.isLoading = false; // Explicitly set here in case getBalance is not called
-            }
-        },
-
-        async getBalance() {
-            if (!this.walletAddress) {
-                this.output = "Wallet not connected. Cannot fetch balance.";
-                return;
-            }
-            this.isLoading = true;
-            this.output = 'Refreshing balance...';
-            const connection = new Connection(
-                clusterApiUrl('devnet'),
-                'confirmed'
-            )
-            try {
-                const pubKey = new PublicKey(this.walletAddress)
-                const balance = await connection.getBalance(pubKey)
-                this.balance = (balance / LAMPORTS_PER_SOL).toFixed(4)
-                this.output = 'Balance updated.'
-            } catch (err) {
-                console.error('Fetch balance failed:', err)
-                this.output = 'Failed to fetch balance.'
+                const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+                const lamports = await connection.getBalance(new PublicKey(this.publicKey));
+                this.balance = (lamports / LAMPORTS_PER_SOL).toFixed(4);
+                this.message = 'Balance updated.';
+                this.messageType = 'success';
+            } catch (error) {
+                console.error('Error fetching balance:', error);
+                this.balance = '0';
+                this.message = 'Failed to fetch balance.';
+                this.messageType = 'error';
             } finally {
                 this.isLoading = false;
             }
         },
 
-        async sendSol() {
-            const recipient = prompt('Enter recipient wallet address:')
-            if (!recipient) return
+        async init() {
+            this.isLoading = true;
+            this.message = 'Initializing wallet...';
+            this.messageType = 'info';
 
-            if (!this.walletAddress) {
-                this.output = "Wallet not connected. Cannot send SOL.";
+            if (!this._provider) {
+                this.message = 'Phantom Wallet not found. Please install it.';
+                this.messageType = 'error';
+                this.isLoading = false;
+                return;
+            }
+
+            // Try to connect if already trusted (e.g., on page refresh)
+            try {
+                const resp = await this._provider.connect({ onlyIfTrusted: true });
+                this.publicKey = resp.publicKey.toBase58();
+                this.isConnected = true;
+                this.message = 'Wallet connected.';
+                this.messageType = 'success';
+                await this._updateBalance();
+            } catch (error) {
+                // This error is expected if not already trusted or if the user chose not to connect previously
+                this.message = 'Please connect your wallet.';
+                this.messageType = 'info';
+                this.isConnected = false;
+                this.publicKey = null;
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        async connectWallet() {
+            if (!this._provider) {
+                this.message = 'Phantom Wallet not found. Please install it to connect.';
+                this.messageType = 'error';
                 return;
             }
             this.isLoading = true;
-            this.output = 'Preparing transaction...';
-
-            const connection = new Connection(
-                clusterApiUrl('devnet'),
-                'confirmed'
-            )
-            const pubKey = new PublicKey(this.walletAddress)
-
+            this.message = 'Connecting to Phantom... Please approve in the wallet.';
+            this.messageType = 'info';
             try {
-                const transaction = new Transaction().add(
-                    SystemProgram.transfer({
-                        fromPubkey: pubKey,
-                        toPubkey: new PublicKey(recipient),
-                        lamports: LAMPORTS_PER_SOL * 0.001, // 0.001 SOL
-                    })
-                )
-
-                const { blockhash } = await connection.getLatestBlockhash()
-                transaction.recentBlockhash = blockhash
-                transaction.feePayer = pubKey
-
-                this.output = 'Please approve the transaction in your wallet...';
-                const signedTx =
-                    await window.solana!.signAndSendTransaction(transaction)
-                this.output = `Transaction sent: ${signedTx.signature}`
-            } catch (err) {
-                console.error('Send failed:', err)
-                this.output = 'Failed to send transaction.'
+                const resp = await this._provider.connect();
+                this.publicKey = resp.publicKey.toBase58();
+                this.isConnected = true;
+                this.message = 'Wallet connected successfully!';
+                this.messageType = 'success';
+                await this._updateBalance();
+            } catch (error: any) {
+                console.error('Error connecting wallet:', error);
+                this.publicKey = null;
+                this.isConnected = false;
+                this.message = `Failed to connect: ${error.message || 'User rejected request.'}`;
+                this.messageType = 'error';
             } finally {
                 this.isLoading = false;
             }
         },
 
         async disconnectWallet() {
-            if (window.solana && typeof window.solana.disconnect === 'function') {
-                try {
-                    await window.solana.disconnect();
-                } catch (err) {
-                    console.error('Error during disconnect:', err);
-                    // Even if disconnect throws, we proceed to clear state locally
-                }
+            if (!this._provider || !this.isConnected) return;
+            this.isLoading = true;
+            this.message = 'Disconnecting...';
+            this.messageType = 'info';
+            try {
+                await this._provider.disconnect();
+            } catch (error) {
+                console.error('Error disconnecting wallet:', error);
+                // Even if provider disconnect fails, reset state locally
+            } finally {
+                this.publicKey = null;
+                this.isConnected = false;
+                this.balance = '0';
+                this.message = 'Wallet disconnected.';
+                this.messageType = 'info';
+                this.isLoading = false;
             }
-            this.walletConnected = false;
-            this.walletAddress = '';
-            this.balance = '0';
-            this.output = 'Wallet disconnected.';
-            this.isLoading = false; // Ensure loader is hidden
-        }
-    }
-}
+        },
 
-// Mount Alpine
+        async fetchBalance() {
+            if (!this.isConnected || !this.publicKey) {
+                this.message = 'Connect wallet to refresh balance.';
+                this.messageType = 'error';
+                return;
+            }
+            await this._updateBalance();
+        }
+    };
+};
+
+// Register the store with Alpine
 document.addEventListener('alpine:init', () => {
-    window.Alpine.store('phantomWallet', phantomWallet)
-})
+    Alpine.store('wallet', createPhantomWalletStore());
+});

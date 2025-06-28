@@ -1,9 +1,8 @@
-import './style.css'
-import './web3'
+import './style.css' // For TailwindCSS
+import './web3'      // Import for store registration
 
 import Alpine from 'alpinejs'
-
-import collapse from '@alpinejs/collapse'
+// import collapse from '@alpinejs/collapse' // Not currently used in new HTML
 
 declare global {
     interface Window {
@@ -12,6 +11,8 @@ declare global {
 }
 
 window.Alpine = Alpine
-Alpine.plugin(collapse)
+// Alpine.plugin(collapse) // Not currently used
 
 Alpine.start()
+
+console.log('Alpine started and store should be registered.');
